@@ -13,8 +13,6 @@ const (
 	opcDATA
 	opcACK
 	opcERR
-
-	mOCTET = string("octet")
 )
 
 type packet interface {
@@ -49,6 +47,57 @@ type packetERR struct {
 	errMsg  string
 }
 
+func readRawPacket(b *bytes.Buffer) (packet, error) {
+	var p packet
+	var opcode uint16
+	if err := binary.Read(b, binary.BigEndian, &opcode); err != nil {
+		return nil, err
+	}
+	switch opcode {
+	case opcRRQ:
+		p = &packetRRQ{}
+	case opcWRQ:
+		p = &packetWRQ{}
+	case opcACK:
+		p = &packetACK{}
+	case opcDATA:
+		p = &packetDATA{}
+	case opcERR:
+		p = &packetERR{}
+	default:
+		return nil, errors.New("could not parse packet type")
+	}
+
+	if err := p.Read(b); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+func writeRawPacket(p packet, b *bytes.Buffer) error {
+	var opcode uint16
+
+	switch p.(type) {
+	case *packetRRQ:
+		opcode = opcRRQ
+	case *packetWRQ:
+		opcode = opcWRQ
+	case *packetACK:
+		opcode = opcACK
+	case *packetDATA:
+		opcode = opcDATA
+	case *packetERR:
+		opcode = opcERR
+	default:
+		return errors.New("could not recognize packet type")
+	}
+
+	if err := binary.Write(b, binary.BigEndian, opcode); err != nil {
+		return err
+	}
+	return p.Write(b)
+}
+
 func readChunk(b *bytes.Buffer) (string, error) {
 	last := b.Bytes()
 	p := bytes.IndexByte(last, 0)
@@ -76,7 +125,7 @@ func (p *packetRWRQ) Read(b *bytes.Buffer) error {
 	if err != nil {
 		return err
 	}
-	if mode != mOCTET {
+	if mode != "octet" {
 		return errors.New("invalid mode")
 	}
 	return nil
@@ -86,10 +135,7 @@ func (p *packetRWRQ) Write(b *bytes.Buffer) error {
 	if err := writeChunk(b, p.filename); err != nil {
 		return err
 	}
-	if err := writeChunk(b, p.mode); err != nil {
-		return err
-	}
-	return nil
+	return writeChunk(b, p.mode)
 }
 
 func (p *packetACK) Read(b *bytes.Buffer) error {
@@ -131,28 +177,5 @@ func (p *packetERR) Write(b *bytes.Buffer) error {
 	if err != nil {
 		return err
 	}
-	err = writeChunk(b, p.errMsg)
-	return err
-}
-
-func readRawPacket(b *bytes.Buffer) (packet, error) {
-	var p packet
-	var opcode uint16
-	if err := binary.Read(b, binary.BigEndian, &opcode); err != nil {
-		return nil, err
-	}
-	switch opcode {
-	case opcRRQ:
-		p = &packetRRQ{}
-	case opcWRQ:
-		p = &packetWRQ{}
-	case opcACK:
-		p = &packetACK{}
-	case opcDATA:
-		p = &packetDATA{}
-	case opcERR:
-		p = &packetERR{}
-	default:
-		return nil, errors.New("invalid opcode")
-	}
+	return writeChunk(b, p.errMsg)
 }
