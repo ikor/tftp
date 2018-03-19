@@ -5,12 +5,13 @@ import (
 	"errors"
 	"io"
 	"net"
-	"time"
+	"os"
 )
 
 const (
-	timeout = 5 // in seconds
-	retry   = 3
+	timeout   = 5 // in seconds
+	retry     = 3
+	blocksize = 512
 )
 
 type tFTPError struct {
@@ -33,14 +34,8 @@ var (
 
 // Handler is the main interface that any client using this library needs to implement
 type Handler interface {
-	ReadFile(f string, c Conn) (ReadCloser, error)
-	WriteFile(f string, c Conn) (WriteCloser, error)
-}
-
-// Conn describes current connection's endpoints
-type Conn interface {
-	LocalAddr() net.Addr
-	RemoteAddr() net.Addr
+	ReadFile(f string) (ReadCloser, error)
+	WriteFile(f string) (WriteCloser, error)
 }
 
 // ReadCloser is an interface for handling read TFTP requests
@@ -54,83 +49,94 @@ type WriteCloser interface {
 }
 
 type wireReader interface {
-	read(time.Duration) (packet, error)
+	read(*bytes.Buffer) (packet, error)
 }
 type wireWriter interface {
 	write(packet) error
 }
 type session struct {
-	h       Handler
-	c       Conn
-	timeout int // seconds
-	r       wireReader
-	w       wireWriter
+	h     Handler
+	raddr *net.UDPAddr
+	conn  *net.UDPConn
+	wireReader
+	wireWriter
 }
+type ackValidator func(p packet) bool
 
-type packetReader struct {
-	ch <-chan []byte
-}
-
-func (pr *packetReader) read(timeout time.Duration) (packet, error) {
-	select {
-	case b := <-pr.ch:
-		return readRawPacket(bytes.NewBuffer(b))
-	case <-time.After(timeout):
-		return nil, errTimeOut
+func (s *session) errorHandler(terr tFTPError, msg string) error {
+	if msg == "" {
+		msg = terr.errMsg
 	}
-}
-
-type packetWriter struct {
-	net.PacketConn
-	addr net.Addr
-	b    bytes.Buffer
-}
-
-func (pw *packetWriter) write(p packet) error {
-	pw.b.Reset()
-	if err := writeRawPacket(p, &pw.b); err != nil {
-		return err
-	}
-	_, err := pw.PacketConn.WriteTo(pw.b.Bytes(), pw.addr)
-	return err
-}
-
-func (s *session) errorHandler(code uint16, msg string) error {
-	e := packetERR{
-		errCode: code,
-		errMsg:  msg,
-	}
+	e := packetERR{terr.errCode, msg}
 	return s.write(&e)
 }
 
-func serve(h Handler, c Conn, r wireReader, w wireWriter) {
-	s := &session{h, c, timeout, r, w}
-	s.serve()
-}
-
-func (s *session) serve() {
-	p, err := s.read(0)
+func (s *session) handleRRQ(p *packetRRQ) {
+	fd, err := s.h.ReadFile(p.filename)
 	if err != nil {
-		s.errorHandler(errNotDefined.errCode, err.Error())
+		switch err {
+		case os.ErrNotExist:
+			s.errorHandler(errFileNotFound, "")
+		default:
+			s.errorHandler(errNotDefined, err.Error())
+		}
 		return
 	}
-	switch pt := p.(type) {
-	case *packetRRQ:
-		s.handleRRQ(pt)
-	case *packetWRQ:
-		s.handleWRQ(pt)
-	default:
-		s.errorHandler(errIllegalOperation)
+
+	var buf = make([]byte, blocksize)
+	for blockNum := uint16(1); err == nil; blockNum++ {
+		n, err := io.ReadAtLeast(fd, buf, blocksize)
+		// ReadAtList will produce 2 errors: io.EOF if n == 0
+		// or io.ErrUnexpectedEOF if n < 512
+		switch err {
+		case nil:
+		case io.ErrUnexpectedEOF, io.EOF:
+			err = io.EOF
+		default:
+			s.errorHandler(errNotDefined, err.Error())
+			return
+		}
+		// prepare data packet
+		p := &packetDATA{
+			blockNum: blockNum,
+			data:     buf[:n],
+		}
+		s.writeAndWait(p, ackVal(blockNum))
 	}
+}
+
+func (s *session) handleWRQ(p *packetWRQ) {
 	return
 }
 
-// writeAndWait will send a packet and wait for response. If no response arrives before timeout,
-// it will try to send same packet again until retry limit is reached.
-func (s *session) writeWithWait(p packet) (packet, error) {
+func ackVal(blockNum uint16) ackValidator {
+	return func(p packet) bool {
+		ack, ok := p.(*packetACK)
+		return ok && (ack.blockNum == blockNum)
+	}
+}
+
+// writeAndWait will send a data packet and wait for an ACK. If no response arrives
+// before timeout, it will try to send same packet again until retry limit is reached.
+func (s *session) writeAndWait(p packet, v ackValidator) (packet, error) {
+	b := make([]byte, 1500)
 	for i := 0; i < retry; i++ {
 		if err := s.write(p); err != nil {
-			return err
+			return nil, err
+		}
+		n, _, err := s.conn.ReadFromUDP(b)
+		if _, ok := err.(net.Error); ok {
+			continue
+		}
+
+		if err != nil {
+			return nil, err
+		}
+		ack, err := s.read(bytes.NewBuffer(b[:n]))
+		if v(ack) {
+			return p, nil
 		}
 	}
+
+	return nil, errTimeOut
 }
