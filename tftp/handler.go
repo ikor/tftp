@@ -35,7 +35,7 @@ var (
 // Handler is the main interface that any client using this library needs to implement
 type Handler interface {
 	ReadFile(f string) (ReadCloser, error)
-	WriteFile(f string) (WriteCloser, error)
+	WriteFile(f string, data []byte) (WriteCloser, error)
 }
 
 // ReadCloser is an interface for handling read TFTP requests
@@ -61,7 +61,21 @@ type session struct {
 	wireReader
 	wireWriter
 }
-type ackValidator func(p packet) bool
+type packetValidator func(p packet) bool
+
+func ackValidator(blockNum uint16) packetValidator {
+	return func(p packet) bool {
+		ack, ok := p.(*packetACK)
+		return ok && (ack.blockNum == blockNum)
+	}
+}
+
+func dataValidator(blockNum uint16) packetValidator {
+	return func(p packet) bool {
+		data, ok := p.(*packetDATA)
+		return ok && (data.blockNum == blockNum)
+	}
+}
 
 func (s *session) errorHandler(terr tFTPError, msg string) error {
 	if msg == "" {
@@ -101,24 +115,42 @@ func (s *session) handleRRQ(p *packetRRQ) {
 			blockNum: blockNum,
 			data:     buf[:n],
 		}
-		s.writeAndWait(p, ackVal(blockNum))
+		_, werr := s.writeAndWait(p, ackValidator(blockNum))
+		if werr != nil {
+			return
+		}
 	}
 }
 
 func (s *session) handleWRQ(p *packetWRQ) {
-	return
-}
+	// until file write completion
+	// read block
+	// ack
+	// write file to h.store
+	var buf bytes.Buffer
+	var err error
+	for blockNum := uint16(0); err == nil; blockNum++ {
+		p := &packetACK{blockNum}
+		writeP, writeErr := s.writeAndWait(p, dataValidator(blockNum))
+		if writeErr != nil {
+			return
+		}
+		v, _ := writeP.(*packetDATA)
+		n, err := buf.Read(v.data)
+		if err != nil {
+			return
+		}
+		if n < blocksize {
+			// transfer complete
 
-func ackVal(blockNum uint16) ackValidator {
-	return func(p packet) bool {
-		ack, ok := p.(*packetACK)
-		return ok && (ack.blockNum == blockNum)
+		}
 	}
+	return
 }
 
 // writeAndWait will send a data packet and wait for an ACK. If no response arrives
 // before timeout, it will try to send same packet again until retry limit is reached.
-func (s *session) writeAndWait(p packet, v ackValidator) (packet, error) {
+func (s *session) writeAndWait(p packet, v packetValidator) (packet, error) {
 	b := make([]byte, 1500)
 	for i := 0; i < retry; i++ {
 		if err := s.write(p); err != nil {
@@ -132,9 +164,9 @@ func (s *session) writeAndWait(p packet, v ackValidator) (packet, error) {
 		if err != nil {
 			return nil, err
 		}
-		ack, err := s.read(bytes.NewBuffer(b[:n]))
-		if v(ack) {
-			return p, nil
+		pr, err := s.read(bytes.NewBuffer(b[:n]))
+		if v(pr) {
+			return pr, nil
 		}
 	}
 

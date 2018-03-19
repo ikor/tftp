@@ -53,6 +53,7 @@ func serve(p packet, raddr *net.UDPAddr, h Handler) {
 		return
 	}
 	conn.SetDeadline(time.Now().Add(timeout * time.Second))
+	defer conn.Close()
 
 	spr := &packetReader{}
 	spw := &packetWriter{

@@ -37,7 +37,7 @@ func (h handler) ReadFile(filename string) (tftp.ReadCloser, error) {
 	return h.store[filename], nil
 }
 
-func (h handler) WriteFile(filename string) (tftp.WriteCloser, error) {
+func (h handler) WriteFile(filename string, data []byte) (tftp.WriteCloser, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if _, ok := h.store[filename]; ok {
