@@ -34,18 +34,14 @@ var (
 
 // Handler is the main interface that any client using this library needs to implement
 type Handler interface {
-	ReadFile(f string) (ReadCloser, error)
-	WriteFile(f string, data []byte) (WriteCloser, error)
+	ReadFile(f string) (Reader, error)
+	WriteFile(f string, data []byte) error
+	FileExists(f string) bool
 }
 
-// ReadCloser is an interface for handling read TFTP requests
-type ReadCloser interface {
-	io.ReadCloser
-}
-
-// WriteCloser is an interface for handling write TFTP requests
-type WriteCloser interface {
-	io.WriteCloser
+// Reader is an interface for handling read TFTP requests
+type Reader interface {
+	io.Reader
 }
 
 type wireReader interface {
@@ -72,8 +68,8 @@ func ackValidator(blockNum uint16) packetValidator {
 
 func dataValidator(blockNum uint16) packetValidator {
 	return func(p packet) bool {
-		data, ok := p.(*packetDATA)
-		return ok && (data.blockNum == blockNum)
+		pd, ok := p.(*packetDATA)
+		return ok && (pd.blockNum == blockNum)
 	}
 }
 
@@ -123,26 +119,31 @@ func (s *session) handleRRQ(p *packetRRQ) {
 }
 
 func (s *session) handleWRQ(p *packetWRQ) {
-	// until file write completion
-	// read block
-	// ack
-	// write file to h.store
-	var buf bytes.Buffer
+	if ok := s.h.FileExists(p.filename); ok {
+		s.errorHandler(errFileExists, "")
+		return
+	}
+	var buf []byte
 	var err error
 	for blockNum := uint16(0); err == nil; blockNum++ {
-		p := &packetACK{blockNum}
-		writeP, writeErr := s.writeAndWait(p, dataValidator(blockNum))
+		pAck := &packetACK{blockNum}
+		writeP, writeErr := s.writeAndWait(pAck, dataValidator(blockNum+1))
 		if writeErr != nil {
 			return
 		}
 		v, _ := writeP.(*packetDATA)
-		n, err := buf.Read(v.data)
+		buf := append(buf, v.data...)
 		if err != nil {
 			return
 		}
-		if n < blocksize {
+		if len(v.data) < blocksize {
 			// transfer complete
-
+			finAck := &packetACK{blockNum + 1}
+			_ = s.write(finAck)
+			if err := s.h.WriteFile(p.filename, buf); err != nil {
+				s.errorHandler(errNotDefined, err.Error())
+			}
+			return
 		}
 	}
 	return
