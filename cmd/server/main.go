@@ -1,8 +1,8 @@
 package main
 
 import (
+	"bytes"
 	"errors"
-	"io"
 	"os"
 	"sync"
 
@@ -12,30 +12,19 @@ import (
 type file struct {
 	name string
 	data []byte
-	i    int64
 }
 type handler struct {
 	store map[string]*file
 	mu    *sync.Mutex
 }
 
-func (f *file) Read(b []byte) (int, error) {
-	if f.i >= int64(len(f.data)) {
-		return 0, io.EOF
-	}
-	if len(b) == 0 {
-		return 0, nil
-	}
-	n := copy(b, f.data[f.i:])
-	f.i += int64(n)
-	return n, nil
-}
-
 func (h handler) ReadFile(filename string) (tftp.Reader, error) {
 	if _, ok := h.store[filename]; !ok {
 		return nil, os.ErrNotExist
 	}
-	return h.store[filename], nil
+	t := make([]byte, len(h.store[filename].data))
+	copy(t, h.store[filename].data)
+	return bytes.NewBuffer(t), nil
 }
 
 func (h handler) WriteFile(filename string, data []byte) error {
@@ -44,8 +33,11 @@ func (h handler) WriteFile(filename string, data []byte) error {
 	if _, ok := h.store[filename]; ok {
 		return errors.New("file already exists")
 	}
+	t := make([]byte, len(data))
+	copy(t, data)
 	f := &file{
 		name: filename,
+		data: t,
 	}
 	h.store[f.name] = f
 	return nil

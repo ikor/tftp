@@ -2,6 +2,7 @@ package tftp
 
 import (
 	"bytes"
+	"log"
 	"net"
 	"time"
 )
@@ -23,9 +24,8 @@ func (pr *packetReader) read(b *bytes.Buffer) (packet, error) {
 }
 
 type packetWriter struct {
-	c    *net.UDPConn
-	addr net.Addr
-	b    bytes.Buffer
+	c *net.UDPConn
+	b bytes.Buffer
 }
 
 func (pw *packetWriter) write(p packet) error {
@@ -35,11 +35,6 @@ func (pw *packetWriter) write(p packet) error {
 	}
 	_, err := pw.c.Write(pw.b.Bytes())
 	return err
-}
-
-func writeError(pw *packetWriter, err tFTPError, msg string) {
-	e := &packetERR{err.errCode, msg}
-	pw.write(e)
 }
 
 func serve(p packet, raddr *net.UDPAddr, h Handler) {
@@ -74,7 +69,7 @@ func serve(p packet, raddr *net.UDPAddr, h Handler) {
 	case *packetWRQ:
 		s.handleWRQ(pt)
 	default:
-		// writeError(pw, errIllegalOperation, "")
+		// do nothing
 	}
 }
 
@@ -87,14 +82,13 @@ func ListenAndServe(addr string, h Handler) error {
 		return err
 	}
 	c, err := net.ListenUDP("udp4", laddr)
-	defer c.Close()
 
 	if err != nil {
 		return err
 	}
+	defer c.Close()
 
 	b := make([]byte, 1500) // Ethernet v2 MTU, todo convert to sync.pool
-
 	for {
 		n, raddr, err := c.ReadFromUDP(b)
 		if err != nil {
@@ -102,6 +96,10 @@ func ListenAndServe(addr string, h Handler) error {
 		}
 		pr := &packetReader{}
 		p, err := pr.read(bytes.NewBuffer(b[:n]))
+		if err != nil {
+			log.Printf("packet/read error %#v", err)
+			continue
+		}
 		go serve(p, raddr, h)
 	}
 }

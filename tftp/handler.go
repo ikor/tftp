@@ -94,18 +94,20 @@ func (s *session) handleRRQ(p *packetRRQ) {
 	}
 
 	var buf = make([]byte, blocksize)
-	for blockNum := uint16(1); err == nil; blockNum++ {
-		n, err := io.ReadAtLeast(fd, buf, blocksize)
-		// ReadAtList will produce 2 errors: io.EOF if n == 0
-		// or io.ErrUnexpectedEOF if n < 512
-		switch err {
+	var rerr error
+	for blockNum := uint16(1); rerr == nil; blockNum++ {
+		n, rerr := io.ReadAtLeast(fd, buf, blocksize)
+		// ReadAtList will return io.ErrUnexpectedEOF if n < 512,
+		// i.e. final packet of the session
+		switch rerr {
 		case nil:
-		case io.ErrUnexpectedEOF, io.EOF:
-			err = io.EOF
+		case io.EOF, io.ErrUnexpectedEOF:
+			rerr = io.ErrUnexpectedEOF
 		default:
-			s.errorHandler(errNotDefined, err.Error())
+			s.errorHandler(errNotDefined, rerr.Error())
 			return
 		}
+
 		// prepare data packet
 		p := &packetDATA{
 			blockNum: blockNum,
@@ -116,6 +118,7 @@ func (s *session) handleRRQ(p *packetRRQ) {
 			return
 		}
 	}
+	return
 }
 
 func (s *session) handleWRQ(p *packetWRQ) {
