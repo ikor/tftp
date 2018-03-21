@@ -47,16 +47,18 @@ type Reader interface {
 type wireReader interface {
 	read(*bytes.Buffer) (packet, error)
 }
+
 type wireWriter interface {
 	write(packet) error
 }
+
 type session struct {
-	h     Handler
-	raddr *net.UDPAddr
-	conn  *net.UDPConn
+	h    Handler
+	conn *net.UDPConn
 	wireReader
 	wireWriter
 }
+
 type packetValidator func(p packet) bool
 
 func ackValidator(blockNum uint16) packetValidator {

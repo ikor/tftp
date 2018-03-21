@@ -58,7 +58,6 @@ func serve(p packet, raddr *net.UDPAddr, h Handler) {
 	s := session{
 		h:          h,
 		conn:       conn,
-		raddr:      raddr,
 		wireReader: spr,
 		wireWriter: spw,
 	}
