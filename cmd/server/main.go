@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"sync"
 
@@ -57,6 +58,11 @@ func main() {
 		store: s,
 		mu:    mu,
 	}
-	err := tftp.ListenAndServe("0.0.0.0:1069", h)
+	port := "1069"
+	if v := os.Getenv("TFTP_PORT"); v != "" {
+		port = v
+	}
+	addr := fmt.Sprintf("0.0.0.0:%v", port)
+	err := tftp.ListenAndServe(addr, h)
 	panic(err)
 }

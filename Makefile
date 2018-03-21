@@ -1,7 +1,13 @@
-BINDIR=cmd/server
-BINARYNAME=server
+BINDIR=./cmd/server
+BINARYNAME=ramtftp
 
+.PHONY: all
+all: build
+
+.PHONY: build
 build:
-	mkdir -p $(BINDIR)
-	go build -o $(BINDIR)/$(BINARYNAME) ./cmd/$(BINARYNAME)/
+	go build -o $(BINDIR)/$(BINARYNAME) $(BINDIR)
 
+.PHONY: test
+test:
+	go test -cover -v ./tftp/
