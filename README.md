@@ -1,5 +1,4 @@
-# TFTP [![GoDoc](http://godoc.org/github.com/ikor/tftp?status.png)](http://godoc.org/github.com/ikor/tftp)
-[![Build Status](https://travis-ci.org/ikor/tftp.svg?branch=master)](https://travis-ci.org/ikor/tftp)
+# TFTP [![GoDoc](http://godoc.org/github.com/ikor/tftp?status.png)](http://godoc.org/github.com/ikor/tftp) [![Build Status](https://travis-ci.org/ikor/tftp.svg?branch=master)](https://travis-ci.org/ikor/tftp)
 
 TFTP server implementation with in memory storage. Current version implements [RFC 1350](https://tools.ietf.org/html/rfc1350)
 
