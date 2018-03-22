@@ -96,9 +96,10 @@ func (s *session) handleRRQ(p *packetRRQ) {
 	}
 
 	var buf = make([]byte, blocksize)
+	var n int
 	var rerr error
 	for blockNum := uint16(1); rerr == nil; blockNum++ {
-		n, rerr := io.ReadAtLeast(fd, buf, blocksize)
+		n, rerr = io.ReadAtLeast(fd, buf, blocksize)
 		// ReadAtList will return io.ErrUnexpectedEOF if n < 512,
 		// i.e. final packet of the session
 		switch rerr {
@@ -137,7 +138,7 @@ func (s *session) handleWRQ(p *packetWRQ) {
 			return
 		}
 		v, _ := writeP.(*packetDATA)
-		buf := append(buf, v.data...)
+		buf = append(buf, v.data...)
 		if err != nil {
 			return
 		}
