@@ -154,7 +154,7 @@ func (s *session) handleWRQ(p *packetWRQ) {
 	return
 }
 
-// writeAndWait will send a data packet and wait for an ACK. If no response arrives
+// writeAndWait will send a data packet and wait for a response. If no response arrives
 // before timeout, it will try to send same packet again until retry limit is reached.
 func (s *session) writeAndWait(p packet, v packetValidator) (packet, error) {
 	b := make([]byte, 1500)

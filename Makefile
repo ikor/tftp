@@ -2,7 +2,7 @@ BINDIR=./cmd/server
 BINARYNAME=ramtftp
 
 .PHONY: all
-all: build
+all: test build
 
 .PHONY: build
 build:
