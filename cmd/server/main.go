@@ -16,22 +16,24 @@ type file struct {
 }
 type handler struct {
 	store map[string]*file
-	mu    *sync.Mutex
+	mu    *sync.RWMutex
 }
 
 func (h handler) ReadFile(filename string) (tftp.Reader, error) {
-	if _, ok := h.store[filename]; !ok {
+	if ok := h.FileExists(filename); !ok {
 		return nil, os.ErrNotExist
 	}
+	h.mu.RLock()
 	t := make([]byte, len(h.store[filename].data))
 	copy(t, h.store[filename].data)
+	h.mu.RUnlock()
 	return bytes.NewBuffer(t), nil
 }
 
 func (h handler) WriteFile(filename string, data []byte) error {
-	defer h.mu.Unlock()
 	h.mu.Lock()
-	if _, ok := h.store[filename]; ok {
+	defer h.mu.Unlock()
+	if ok := h.FileExists(filename); ok {
 		return errors.New("file already exists")
 	}
 	t := make([]byte, len(data))
@@ -45,15 +47,13 @@ func (h handler) WriteFile(filename string, data []byte) error {
 }
 
 func (h handler) FileExists(filename string) bool {
-	if _, ok := h.store[filename]; !ok {
-		return false
-	}
-	return true
+	_, ok := h.store[filename]
+	return ok
 }
 
 func main() {
 	s := make(map[string]*file)
-	mu := &sync.Mutex{}
+	mu := &sync.RWMutex{}
 	h := handler{
 		store: s,
 		mu:    mu,
