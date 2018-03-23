@@ -159,9 +159,6 @@ func TestWriteFileConcurrent(t *testing.T) {
 				got := make([]byte, 1)
 				trs.Read(got)
 			}
-			if len(h.store) > 1 {
-				t.Errorf("Stored items number is not correct")
-			}
 		})
 	}
 }
