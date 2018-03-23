@@ -31,8 +31,7 @@ func (h handler) ReadFile(filename string) (tftp.Reader, error) {
 }
 
 func (h handler) WriteFile(filename string, data []byte) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+
 	if ok := h.FileExists(filename); ok {
 		return errors.New("file already exists")
 	}
@@ -42,11 +41,15 @@ func (h handler) WriteFile(filename string, data []byte) error {
 		name: filename,
 		data: t,
 	}
+	h.mu.Lock()
 	h.store[f.name] = f
+	h.mu.Unlock()
 	return nil
 }
 
 func (h handler) FileExists(filename string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	_, ok := h.store[filename]
 	return ok
 }

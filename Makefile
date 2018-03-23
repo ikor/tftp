@@ -10,4 +10,4 @@ build:
 
 .PHONY: test
 test:
-	go test -cover -v ./tftp/
+	go test -race -cover -v github.com/ikor/tftp/tftp github.com/ikor/tftp/cmd/server

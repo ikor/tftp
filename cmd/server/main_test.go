@@ -125,40 +125,33 @@ func TestReadFile(t *testing.T) {
 	}
 }
 
-func TestWriteFileConcurrent(t *testing.T) {
+func TestRWFileConcurrent(t *testing.T) {
 	h := handler{
 		store: make(map[string]*file),
 		mu:    &sync.RWMutex{},
 	}
-	testCases := []struct {
-		desc     string
-		filename string
-		// data     []byte
-		want    []byte
-		wanterr error
-	}{
-		{
-			desc:     "should write a file to the store",
-			filename: "foobar",
-			// data:     []byte{0, 1, 2, 3, 4},
-			want:    nil,
-			wanterr: nil,
-		},
+	werrCh := make(chan error)
+	rerrCh := make(chan error)
+	for i := 0; i < 130; i++ {
+		fname := fmt.Sprintf("foobar%d", i)
+		data := []byte{byte(i)}
+		go func(fname string, data []byte, errCh chan error) {
+			if err := h.WriteFile(fname, data); err != nil {
+				werrCh <- err
+			}
+			trs, _ := h.ReadFile(fname)
+			got := make([]byte, 1)
+			trs.Read(got)
+			if !bytes.Equal(got, data) {
+				errCh <- fmt.Errorf("got %v, want %v", got, data)
+			}
+		}(fname, data, rerrCh)
 	}
-	for _, tC := range testCases {
-		t.Run(tC.desc, func(t *testing.T) {
-			for i := 0; i < 13; i++ {
-				fname := fmt.Sprintf("%s%d", tC.filename, i)
-				data := []byte{byte(i)}
-				go h.WriteFile(fname, data)
-			}
-
-			for i := 0; i < 13; i++ {
-				fname := fmt.Sprintf("%s%d", tC.filename, i)
-				trs, _ := h.ReadFile(fname)
-				got := make([]byte, 1)
-				trs.Read(got)
-			}
-		})
+	select {
+	case werr := <-werrCh:
+		t.Errorf("write error: %v", werr)
+	case rerr := <-rerrCh:
+		t.Errorf("read error: %v", rerr)
+	default:
 	}
 }
